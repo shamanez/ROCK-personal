@@ -1,3 +1,4 @@
+import os
 from abc import ABC, abstractmethod
 
 from rock.config import RuntimeConfig
@@ -111,6 +112,22 @@ class LocalRuntimeEnv(RuntimeEnv):
                 "container": "/tmp/local_files",
             },
         ]
+
+        # The .venv/bin/python symlink may point to a uv-managed Python path
+        # that differs from the resolved python_env_path (e.g., cpython-3.11-...
+        # is a symlink to cpython-3.11.15-...). Mount the symlink target path
+        # so the interpreter shebang resolves correctly inside the container.
+        venv_python = os.path.join(project_root, ".venv", "bin", "python")
+        if os.path.islink(venv_python):
+            symlink_target = os.readlink(venv_python)
+            if os.path.isabs(symlink_target):
+                symlink_parent = os.path.dirname(os.path.dirname(symlink_target))
+                real_parent = os.path.realpath(symlink_parent)
+                if symlink_parent != real_parent and symlink_parent != python_env_path:
+                    mount_configs.append({
+                        "local": real_parent,
+                        "container": symlink_parent,
+                    })
 
         return mount_configs
 

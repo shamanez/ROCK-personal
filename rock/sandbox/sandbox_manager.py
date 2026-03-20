@@ -224,7 +224,19 @@ class SandboxManager(BaseManager):
         is_alive = sandbox_info.get("state") == State.RUNNING
         self._update_sandbox_alive_info(sandbox_info, is_alive)
         if self._redis_provider:
-            await self._redis_provider.json_set(alive_sandbox_key(sandbox_id), "$", sandbox_info)
+            # Serialize PhaseStatus/State objects before storing in Redis
+            serializable_info = {}
+            for k, v in sandbox_info.items():
+                if k == "phases" and isinstance(v, dict):
+                    serializable_info[k] = {
+                        name: phase.to_dict() if hasattr(phase, "to_dict") else phase
+                        for name, phase in v.items()
+                    }
+                elif hasattr(v, "value"):  # Enum types like State
+                    serializable_info[k] = v.value
+                else:
+                    serializable_info[k] = v
+            await self._redis_provider.json_set(alive_sandbox_key(sandbox_id), "$", serializable_info)
             await self._update_expire_time(sandbox_id)
         return SandboxStatusResponse(
             sandbox_id=sandbox_id,
